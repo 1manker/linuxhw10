@@ -18,6 +18,8 @@
 
 void execute(char **argv);
 void executeWOorder(char ** argv);
+void executePipe(char** argsFirst, char** argsSecond);
+
 
 int main()
 {
@@ -30,6 +32,8 @@ int main()
   char buf[1024];
   int command = 0;
   int redirCount = 0;
+  int lastCharIn = 0;
+  int lastCharOut = 0;
   int redirIcount = 0;
   int errorOnLine = 0;
   int expFile = 0;
@@ -37,6 +41,7 @@ int main()
   char* args[64];
   char* outargs[64];
   char* inargs[64];
+  int pipes[64];
   int argsc = 0;
   int argsvc = 0;
   int ampFound = 0;
@@ -67,18 +72,20 @@ int main()
           if(expFile){
               expFile = 0;
           }
-          if(redirCount){
+          if(lastCharOut){
               outargs[argsvc] = malloc(strlen(lexeme+1));
               for(int i = 0; i < strlen(lexeme); i++){
                   outargs[argsvc][i] = lexeme[i];
               }
+              lastCharOut = 0;
               break;
           }
-          if(redirIcount){
+          if(lastCharIn){
               inargs[argsvc] = malloc(strlen(lexeme)+1);
               for(int i = 0; i < strlen(lexeme); i++){
                   inargs[argsvc][i] = lexeme[i];
               }
+              lastCharIn = 0;
               break;
           }
           if(!command){
@@ -88,6 +95,7 @@ int main()
             }
             args[argsc][strlen(lexeme)+1]='\0';
             command = 1;
+            pipes[argsvc] = 0;
             argsc++;
             break;
           }
@@ -135,6 +143,7 @@ int main()
               errorOnLine = 1;
               break;
           }
+          pipes[argsvc] = 1;
           argsv[argsvc] = malloc(sizeof(args));
           for(int i = 0; i < argsc; i++){
               argsv[argsvc][i] = malloc(strlen(args[i])+1);
@@ -179,6 +188,7 @@ int main()
           else{
               redirCount = 1;
               expFile = 1;
+              lastCharOut = 1;
               break;
           }
         case REDIR_IN:
@@ -200,6 +210,7 @@ int main()
           else{
               redirIcount = 1;
               expFile = 1;
+              lastCharIn = 1;
               break;
           }
         case APPEND_OUT:
@@ -207,6 +218,9 @@ int main()
               printf("missing filename after redirection");
               errorOnLine = 1;
               break;
+          }
+          else{
+              lastCharOut = 1;
           }
           break;
         case ERROR_CHAR:
@@ -277,7 +291,23 @@ int main()
                     save_in = dup(fileno(stdin));
                     dup2(in, 0);
                 }
-                execute(argsv[i]);
+                if(pipes[i]){
+                    if(outargs[i+1] != NULL){
+                        out = open(outargs[i+1], O_RDWR|O_CREAT|O_APPEND, 0600);
+                        save_out = dup(fileno(stdout));
+                        dup2(out, fileno(stdout));
+                    }
+                    executePipe(argsv[i], argsv[i+1]);
+                    if(outargs[i+1] != NULL){
+                        fflush(stdout); close(out);
+                        dup2(save_out, fileno(stdout));
+                        close(save_out);
+                    }
+                    i++;
+                }
+                else{
+                    execute(argsv[i]);
+                }
                 if(outargs[i] != NULL){
                     fflush(stdout); close(out);
                     dup2(save_out, fileno(stdout));
@@ -350,7 +380,36 @@ void executeWOorder(char** args){
     }
 }
 
-
+void executePipe(char** argsFirst, char** argsSecond){
+    int des_p[2];
+    if(pipe(des_p) == -1){
+        perror("Pipe has failed");
+        exit(1);
+    }
+    if(fork() == 0){
+        close(STDOUT_FILENO);
+        dup(des_p[1]);
+        close(des_p[0]);
+        close(des_p[1]);
+        execvp(*argsFirst, argsFirst);
+        perror("error");
+        exit(1);
+    }
+    if(fork() == 0){
+        close(STDIN_FILENO);
+        dup(des_p[0]);
+        close(des_p[1]);
+        close(des_p[0]);
+        execvp(*argsSecond, argsSecond);
+        perror("error");
+        exit(1);
+    }
+    close(des_p[0]);
+    close(des_p[1]);
+    wait(0);
+    wait(0);
+    return;
+}
 
 
 
