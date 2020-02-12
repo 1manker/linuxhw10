@@ -41,14 +41,18 @@ int main()
   char* args[64];
   char* outargs[64];
   char* inargs[64];
+  int errOut[64];
   int pipes[64];
   int argsc = 0;
   int argsvc = 0;
   int ampFound = 0;
   int save_out;
   int save_in;
+  int save_err;
   int out;
   int in;
+  int err;
+
   printf("$> ");
   while(1) {
     errorOnLine = 0;
@@ -244,6 +248,9 @@ int main()
               errorOnLine = 1;
               break;
           }
+          if(outargs[argsvc] != NULL){
+              errOut[argsvc] = 1;
+          }
           break;
         case REDIR_ERR:
            if(expFile){
@@ -291,6 +298,11 @@ int main()
                     save_in = dup(fileno(stdin));
                     dup2(in, 0);
                 }
+                if(errOut[i]){
+                    err = open(outargs[i], O_RDWR|O_CREAT|O_APPEND, 0600);
+                    save_err = dup(fileno(stderr));
+                    dup2(err, fileno(stderr));
+                }
                 if(pipes[i]){
                     if(outargs[i+1] != NULL){
                         out = open(outargs[i+1], O_RDWR|O_CREAT|O_APPEND, 0600);
@@ -313,6 +325,11 @@ int main()
                     dup2(save_out, fileno(stdout));
                     close(save_out);
                 }
+                if(errOut[i]){
+                    fflush(stderr); close(err);
+                    dup2(save_err, fileno(stderr));
+                    close(save_err);
+                }
                 fflush(stdin); close(in);
                 dup2(save_in, fileno(stdin));
                 close(save_in);
@@ -325,6 +342,7 @@ int main()
                 argsv[i] = '\0';
                 outargs[i] = '\0';
                 inargs[i] = '\0';
+                errOut[i] = '\0';
             }
             argsc = 0;
             argsvc = 0;
